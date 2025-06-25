@@ -7,3 +7,8 @@ docker instalado
 ```
 docker compose up --build
 ```
+
+### Teste de upload do arquivo:
+```
+curl -F 'file=@teste.txt' http://localhost:8080/upload
+```
