@@ -182,38 +182,84 @@ function displayFilesList(data) {
         return;
     }
     
-    const filesHTML = data.files.map(file => `
-        <div class="border rounded p-3 mb-2">
-            <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
-                    <h6 class="mb-1">
-                        <i class="bi bi-file-earmark me-2"></i>
-                        ${file.filename}
-                    </h6>
-                    <div class="text-muted small">
-                        <div class="row">
-                            <div class="col-sm-6">
-                                <i class="bi bi-hdd me-1"></i>
-                                Tamanho: ${formatFileSize(file.size)}
+    // Agrupar arquivos por nome original
+    const groupedFiles = groupFilesByOriginalName(data.files);
+    
+    const filesHTML = Object.keys(groupedFiles).map(originalName => {
+        const versions = groupedFiles[originalName];
+        const latestVersion = versions[0]; // Versões já ordenadas por data (mais recente primeiro)
+        
+        return `
+            <div class="border rounded p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <i class="bi bi-file-earmark me-2"></i>
+                            ${originalName}
+                            ${versions.length > 1 ? `<span class="badge bg-info ms-2">${versions.length} versões</span>` : ''}
+                        </h6>
+                        <div class="text-muted small">
+                            <div class="row">
+                                <div class="col-sm-6">
+                                    <i class="bi bi-hdd me-1"></i>
+                                    Tamanho: ${formatFileSize(latestVersion.size)}
+                                </div>
+                                <div class="col-sm-6">
+                                    <i class="bi bi-calendar3 me-1"></i>
+                                    Última versão
+                                </div>
                             </div>
-                            <div class="col-sm-6">
-                                <i class="bi bi-calendar3 me-1"></i>
-                                Criado: ${formatDateTime(file.created)}
-                            </div>
+                            ${versions.length > 1 ? `
+                                <div class="mt-2">
+                                    <small class="text-primary">
+                                        <i class="bi bi-clock-history me-1"></i>
+                                        ${versions.length - 1} versão(ões) anterior(es) disponível(eis)
+                                    </small>
+                                </div>
+                            ` : ''}
                         </div>
+                        ${versions.length > 1 ? `
+                            <div class="mt-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="toggleVersions('${originalName}')" id="toggleBtn-${btoa(originalName)}">
+                                    <i class="bi bi-chevron-down me-1"></i>
+                                    Mostrar versões
+                                </button>
+                                <div class="collapse mt-2" id="versions-${btoa(originalName)}">
+                                    <div class="border-start border-2 border-secondary ps-3">
+                                        ${versions.slice(1).map((version, index) => `
+                                            <div class="d-flex justify-content-between align-items-center py-2 ${index < versions.length - 2 ? 'border-bottom' : ''}">
+                                                <div>
+                                                    <small class="text-muted">
+                                                        Versão ${versions.length - index - 1} - ${formatFileSize(version.size)}
+                                                    </small>
+                                                </div>
+                                                <div class="d-flex gap-1">
+                                                    <button class="btn btn-outline-primary btn-sm" onclick="downloadFile('${version.filename}')" title="Baixar esta versão">
+                                                        <i class="bi bi-download"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-danger btn-sm" onclick="deleteFile('${version.filename}')" title="Remover esta versão">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="ms-3 d-flex gap-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="downloadFile('${latestVersion.filename}')" title="Baixar última versão">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteFile('${latestVersion.filename}')" title="Remover última versão">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
                 </div>
-                <div class="ms-3 d-flex gap-2">
-                    <button class="btn btn-outline-primary btn-sm" onclick="downloadFile('${file.filename}')" title="Baixar arquivo">
-                        <i class="bi bi-download"></i>
-                    </button>
-                    <button class="btn btn-outline-danger btn-sm" onclick="deleteFile('${file.filename}')" title="Remover arquivo">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     
     filesList.innerHTML = `
         <div class="mb-3 text-muted">
@@ -313,6 +359,50 @@ function formatDateTime(dateString) {
     });
 }
 
+// Função para extrair nome original do arquivo (remove timestamp)
+function getOriginalFileName(filename) {
+    return filename.replace(/^\d+-/, '').replace(/_/g, ' ');
+}
+
+// Função para agrupar arquivos por nome original
+function groupFilesByOriginalName(files) {
+    const grouped = {};
+    
+    files.forEach(file => {
+        const originalName = getOriginalFileName(file.filename);
+        
+        if (!grouped[originalName]) {
+            grouped[originalName] = [];
+        }
+        
+        grouped[originalName].push(file);
+    });
+    
+    // Ordenar cada grupo por data de criação (mais recente primeiro)
+    Object.keys(grouped).forEach(originalName => {
+        grouped[originalName].sort((a, b) => new Date(b.created) - new Date(a.created));
+    });
+    
+    return grouped;
+}
+
+// Função para alternar exibição de versões
+function toggleVersions(originalName) {
+    const encodedName = btoa(originalName);
+    const versionsDiv = document.getElementById(`versions-${encodedName}`);
+    const toggleBtn = document.getElementById(`toggleBtn-${encodedName}`);
+    
+    if (versionsDiv.classList.contains('show')) {
+        // Ocultar versões
+        versionsDiv.classList.remove('show');
+        toggleBtn.innerHTML = '<i class="bi bi-chevron-down me-1"></i>Mostrar versões';
+    } else {
+        // Mostrar versões
+        versionsDiv.classList.add('show');
+        toggleBtn.innerHTML = '<i class="bi bi-chevron-up me-1"></i>Ocultar versões';
+    }
+}
+
 // Função para baixar arquivo
 async function downloadFile(filename) {
     const downloadBtn = event.target.closest('button');
@@ -332,13 +422,13 @@ async function downloadFile(filename) {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = filename.replace(/^\d+-/, '').replace(/_/g, ' '); // Nome original
+            a.download = getOriginalFileName(filename); // Usar função para obter nome original
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
             
-            showAlert(`Arquivo "${filename}" baixado com sucesso!`, 'success');
+            showAlert(`Arquivo "${getOriginalFileName(filename)}" baixado com sucesso!`, 'success');
         } else {
             const error = await response.json();
             showAlert(`Erro ao baixar arquivo: ${error.error || 'Erro desconhecido'}`, 'danger');
@@ -355,8 +445,10 @@ async function downloadFile(filename) {
 
 // Função para remover arquivo
 async function deleteFile(filename) {
+    const originalName = getOriginalFileName(filename);
+    
     // Confirmar remoção
-    if (!confirm(`Tem certeza que deseja remover o arquivo "${filename}"?\n\nEsta ação não pode ser desfeita.`)) {
+    if (!confirm(`Tem certeza que deseja remover o arquivo "${originalName}"?\n\nEsta ação não pode ser desfeita.`)) {
         return;
     }
     
@@ -375,7 +467,7 @@ async function deleteFile(filename) {
         const result = await response.json();
         
         if (response.ok) {
-            showAlert(`Arquivo "${filename}" removido com sucesso!`, 'success');
+            showAlert(`Arquivo "${originalName}" removido com sucesso!`, 'success');
             loadFilesList(); // Atualizar lista após remoção
         } else {
             showAlert(`Erro ao remover arquivo: ${result.error || 'Erro desconhecido'}`, 'danger');
